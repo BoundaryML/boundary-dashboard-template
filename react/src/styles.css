@@ -1,0 +1,14 @@
+/* Boundary sets <html data-theme="light|dark"> and these variables, which follow its theme:
+   --bg --panel --fg --muted --line --accent --bad --font */
+body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 13px var(--font); }
+h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
+nav { display: flex; gap: 4px; margin: 0 0 16px; }
+nav button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+nav button[aria-pressed="true"] { background: var(--panel); color: var(--fg); }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; color: var(--muted); font-weight: 400; }
+td, th { padding: 6px 8px; border-top: 1px solid var(--line); }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--panel); }
+.muted { color: var(--muted); }
+.failed { color: var(--bad); }

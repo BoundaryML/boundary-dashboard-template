@@ -45,7 +45,8 @@
       functions logged.
 
   Using React or a bundler: anything that builds to one self-contained HTML file works, for
-  example Vite with vite-plugin-singlefile. Upload the built file.
+  example Vite with vite-plugin-singlefile. Upload the built file. A React starter with the same
+  example is at https://github.com/BoundaryML/boundary-dashboard-template (folder `react`).
 -->
 <html lang="en">
 <head>
@@ -54,6 +55,9 @@
   <style>
     body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 13px var(--font); }
     h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
+    nav { display: flex; gap: 4px; margin: 0 0 16px; }
+    nav button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+    nav button[aria-pressed="true"] { background: var(--panel); color: var(--fg); }
     table { width: 100%; border-collapse: collapse; }
     th { text-align: left; color: var(--muted); font-weight: 400; }
     td, th { padding: 6px 8px; border-top: 1px solid var(--line); }
@@ -64,6 +68,10 @@
 </head>
 <body>
   <h1>Recent processes</h1>
+  <nav>
+    <button type="button" data-view="">All</button>
+    <button type="button" data-view="/failed">Failed</button>
+  </nav>
   <p id="status">Loading...</p>
   <table hidden>
     <thead><tr><th>Entry</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
@@ -71,38 +79,59 @@
   </table>
 
   <script>
-    // The latest 20 processes, each opening in Boundary Cloud. Replace with your own.
-    const RECENT = `
+    // The latest 20 processes, all of them or the failed ones, each opening in Boundary Cloud.
+    // Replace with your own.
+    const recent = (failedOnly) => `
       SELECT p.process_id, p.status, s.span_name AS entry, s.start_time, s.duration
       FROM processes p
       JOIN spans s ON s.process_id = p.process_id
       WHERE s.parent_span_id IS NULL AND s.span_name <> 'baml.gc'
+        ${failedOnly ? "AND p.status <> 'success'" : ''}
       ORDER BY s.start_time DESC
       LIMIT 20`;
 
     const seconds = (ns) => (ns == null ? '-' : `${(ns / 1e9).toFixed(2)}s`);
     const status = document.getElementById('status');
+    const table = document.querySelector('table');
+    const views = document.querySelectorAll('nav button');
+    let shown = 0;
 
-    boundary.query(RECENT).then(
-      ({ rows }) => {
-        document.querySelector('tbody').replaceChildren(
-          ...rows.map((row) => {
-            const tr = document.createElement('tr');
-            for (const text of [row.entry, row.status, row.start_time, seconds(row.duration)]) {
-              tr.insertCell().textContent = text ?? '-';
-            }
-            if (row.status !== 'success') tr.cells[1].className = 'failed';
-            tr.onclick = () => boundary.openProcess(row.process_id);
-            return tr;
-          }),
-        );
-        document.querySelector('table').hidden = false;
-        status.remove();
-      },
-      (error) => {
-        status.textContent = error.message;
-      },
-    );
+    // The view is the page's `#`, so a copied link opens it, and back and forward move between
+    // the views. A view that is not in the list shows all processes.
+    function show() {
+      const view = location.hash.replace(/^#/, '');
+      for (const button of views) button.setAttribute('aria-pressed', String(button.dataset.view === view));
+      table.hidden = true;
+      status.hidden = false;
+      status.textContent = 'Loading...';
+      // A slow answer for a view that the viewer has left is dropped.
+      const asked = ++shown;
+      boundary.query(recent(view === '/failed')).then(
+        ({ rows }) => {
+          if (asked !== shown) return;
+          document.querySelector('tbody').replaceChildren(
+            ...rows.map((row) => {
+              const tr = document.createElement('tr');
+              for (const text of [row.entry, row.status, row.start_time, seconds(row.duration)]) {
+                tr.insertCell().textContent = text ?? '-';
+              }
+              if (row.status !== 'success') tr.cells[1].className = 'failed';
+              tr.onclick = () => boundary.openProcess(row.process_id);
+              return tr;
+            }),
+          );
+          table.hidden = false;
+          status.hidden = true;
+        },
+        (error) => {
+          if (asked === shown) status.textContent = error.message;
+        },
+      );
+    }
+
+    for (const button of views) button.onclick = () => { location.hash = button.dataset.view; };
+    window.addEventListener('hashchange', show);
+    show();
   </script>
 </body>
 </html>
