@@ -1,0 +1,108 @@
+<!doctype html>
+<!--
+  Boundary Cloud dashboard
+
+  A dashboard is this one HTML file. Edit it, then upload it from the Dashboards page, or as a
+  new version of an existing dashboard. Every environment of the project shares it, and it runs
+  against the environment selected in Boundary Cloud: anyone who opens it sees that
+  environment's data with their own access.
+
+  API: Boundary Cloud defines `boundary` before your scripts run.
+
+    boundary.query(sql) -> Promise<{ rows, columns, outcome }>
+      Runs one read-only SELECT over the selected environment's processes, spans,
+      span_announcements and profiler, the same SQL as the Query page and `baml query`.
+        rows      objects keyed by column name: [{ process_id: "...", status: "success" }]
+                  (give two columns of the same name different aliases)
+        columns   [{ name, type }], in order
+        outcome   { status, elapsedMs }: status is "complete" unless rows were cut short
+                  or values were unavailable ("truncated", "incomplete", ...)
+      Captured values (input_args, output_value, ...) arrive whole. Stored files and media
+      bytes cannot be read.
+      Rejects with an Error whose message says why the query failed.
+
+    boundary.openProcess(processId)   opens the process in Boundary Cloud
+    boundary.openSpan(spanId)         opens the span, in its process
+
+  Tables and columns: run `baml query --schema` (or `--schema --table spans`). Try a query
+  against an environment before putting it here:
+    baml query --environment <name> "SELECT ..."
+
+  Links: the page's `#` is kept in Boundary Cloud's URL, so a copied link opens the dashboard
+  where it was, and back and forward move through it. Route on the hash (`#/view/item`) and
+  change views by setting `location.hash`; a plain `<a href="#...">` would navigate the frame
+  away, so set the hash in its click handler.
+
+  Theme: <html data-theme="light|dark"> and these variables follow Boundary Cloud's theme:
+    --bg --panel --fg --muted --line --accent --bad --font
+
+  Rules:
+    - No network access: fetch, external scripts, styles, fonts and images are blocked. Inline
+      everything into this file (data: URLs work for images).
+    - No cookies, localStorage or forms.
+    - The file has a size limit, 5 MiB by default.
+    - Put query results into the page with textContent, not innerHTML: they hold whatever your
+      functions logged.
+
+  Using React or a bundler: anything that builds to one self-contained HTML file works, for
+  example Vite with vite-plugin-singlefile. Upload the built file.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Recent processes</title>
+  <style>
+    body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 13px var(--font); }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; color: var(--muted); font-weight: 400; }
+    td, th { padding: 6px 8px; border-top: 1px solid var(--line); }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--panel); }
+    .failed { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <h1>Recent processes</h1>
+  <p id="status">Loading...</p>
+  <table hidden>
+    <thead><tr><th>Entry</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    // The latest 20 processes, each opening in Boundary Cloud. Replace with your own.
+    const RECENT = `
+      SELECT p.process_id, p.status, s.span_name AS entry, s.start_time, s.duration
+      FROM processes p
+      JOIN spans s ON s.process_id = p.process_id
+      WHERE s.parent_span_id IS NULL AND s.span_name <> 'baml.gc'
+      ORDER BY s.start_time DESC
+      LIMIT 20`;
+
+    const seconds = (ns) => (ns == null ? '-' : `${(ns / 1e9).toFixed(2)}s`);
+    const status = document.getElementById('status');
+
+    boundary.query(RECENT).then(
+      ({ rows }) => {
+        document.querySelector('tbody').replaceChildren(
+          ...rows.map((row) => {
+            const tr = document.createElement('tr');
+            for (const text of [row.entry, row.status, row.start_time, seconds(row.duration)]) {
+              tr.insertCell().textContent = text ?? '-';
+            }
+            if (row.status !== 'success') tr.cells[1].className = 'failed';
+            tr.onclick = () => boundary.openProcess(row.process_id);
+            return tr;
+          }),
+        );
+        document.querySelector('table').hidden = false;
+        status.remove();
+      },
+      (error) => {
+        status.textContent = error.message;
+      },
+    );
+  </script>
+</body>
+</html>
